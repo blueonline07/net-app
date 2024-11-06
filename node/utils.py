@@ -1,8 +1,16 @@
 import hashlib
 import bencodepy
 import os
+from constants import PIECE_SIZE, TRACKER_URL
 
-PIECE_SIZE = 524288 # 512 KB
+def recv_all(sock, num_bytes):
+    data = b""
+    while len(data) < num_bytes:
+        packet = sock.recv(num_bytes - len(data))
+        if not packet:
+            break  # Connection closed
+        data += packet
+    return data
 
 
 def get_info_hash(torrent_file):
@@ -31,9 +39,30 @@ def generate_pieces(file_paths, piece_length):
     if buffer:
         pieces.append(hashlib.sha1(buffer).digest())
     
-    return b"".join(pieces)
+    return pieces
 
-def create_multifile_torrent(file_paths, tracker_url, piece_length=PIECE_SIZE):
+def parse_torrent_file(torrent_file):
+    with open(torrent_file, "rb") as f:
+        torrent_data = f.read()
+        torrent_dict = bencodepy.decode(torrent_data)
+        return torrent_dict
+
+def parse_torrent_file_info(torrent_file):
+    with open(torrent_file, "rb") as f:
+        torrent_data = f.read()
+        torrent_dict = bencodepy.decode(torrent_data)
+
+        files = torrent_dict['info'.encode('ascii')]['files'.encode('ascii')]
+        files_info = []
+        for file in files:
+            files_info.append({
+                'length': file['length'.encode('ascii')],
+                'path': file['path'.encode('ascii')].decode('ascii')
+            })
+        return files_info
+        
+
+def create_multifile_torrent(file_paths, piece_length=PIECE_SIZE):
     # Gather file info for the "files" field
     files_info = []
     for file_path in file_paths:
@@ -41,7 +70,7 @@ def create_multifile_torrent(file_paths, tracker_url, piece_length=PIECE_SIZE):
         file_name = os.path.relpath(file_path)  # Relative paths for directory structure
         files_info.append({
             "length": file_size,
-            "path": file_name.split(os.sep)  # Split path for torrent format compatibility
+            "path": file_name  # Split path for torrent format compatibility
         })
 
     # Generate pieces
@@ -49,20 +78,20 @@ def create_multifile_torrent(file_paths, tracker_url, piece_length=PIECE_SIZE):
 
     # Torrent metadata structure
     torrent_dict = {
-        "announce": tracker_url,
+        "announce": TRACKER_URL,
         "info": {
-            "name": "",  # Name of the torrent, usually the folder name
-            "piece length": piece_length,
+            "name": "repo",  # Name of the torrent, usually the folder name
             "files": files_info,
-            "pieces": pieces
         },
+        "piece length": piece_length,
+        "pieces": pieces
     }
     print(torrent_dict)
 
     # Encode and save as .torrent
     encoded_torrent = bencodepy.encode(torrent_dict)
-    torrent_file = ".torrent"
+    torrent_file = "repo.torrent"
     with open(torrent_file, "wb") as f:
         f.write(encoded_torrent)
 
-    print(f".torrent file created: {torrent_file}")
+    print(f"repo.torrent file created: {torrent_file}")
