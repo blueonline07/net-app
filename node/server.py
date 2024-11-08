@@ -5,28 +5,31 @@ from constants import PIECE_SIZE, PROTOCOL_NAME, PEER_ID
 from time import sleep
 from messages import Message
 import sys
+import socket
+from threading import Thread
 
-def send_handshake(server):
-    msg = recv_all(server.socket, 48 + len(PROTOCOL_NAME))
-    server.send_message(HandshakeMessage(PROTOCOL_NAME, get_info_hash('repo.torrent'), PEER_ID))
-    server.send_message(BitfieldMessage(b'\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01'))
+def recv_handshake(conn):
+    msg = recv_all(conn, 48 + len(PROTOCOL_NAME))
+    conn.sendall(HandshakeMessage(PROTOCOL_NAME, get_info_hash('repo.torrent'), PEER_ID).encode())
+    conn.sendall(BitfieldMessage(b'\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01').encode())
 
-def receive_msg(server):
-    length = recv_all(server.socket,  3)
+def receive_msg(conn):
+    length = recv_all(conn,  3)
+    print(length)
     length = int.from_bytes(length, 'big')
     if length == 0:
         return
-    message = recv_all(server.socket,  length)
+    message = recv_all(conn,  length)
+    print(message)
     message = Message.decode(message)
     if isinstance(message, InterestedMessage):
-        server.send_message(UnchokeMessage())
-        receive_request(server)
+        conn.sendall(UnchokeMessage().encode())
     elif isinstance(message, RequestMessage):
-        receive_request(server, message)
+        receive_request(conn, message)
 
 
 
-def receive_request(server, message):
+def receive_request(conn, message):
     piece_index = message.index
     offset = message.begin
     length = message.length
@@ -44,26 +47,31 @@ def receive_request(server, message):
     with open(files_info[0]['path'], 'rb') as f:
         f.seek(file_position)
         block = f.read(length)
-        server.send_message(PieceMessage(piece_index, offset, block))
+        conn.sendall(PieceMessage(piece_index, offset, block).encode())
 
     print(f"Sent block {piece_index} offset {offset} length {length}")
 
-def run(port):
-    server = ServerConnection(port=port)
-    
+def handle_connection(conn, addr):
     while True:
-        server.accept_connection()
-        first_byte = recv_all(server.socket, 1)
-        if first_byte == b'':
-            print("Connection closed")
-            server.close()
-            break
-        elif first_byte == b'\x13':
-            print("Handshake received")
-            send_handshake(server)
+        first_byte = conn.recv(1)
+        if first_byte == b'\x13':
+            recv_handshake(conn)
+            print("Handshake sent")
         else:
-            receive_msg(server)
+            print("Message received")
+            receive_msg(conn)
     
+
+def run(port):
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('localhost', port))
+    server.listen()
+
+    while True:
+        conn, addr = server.accept()
+        nconn = Thread(target=handle_connection, args=(conn,addr))
+        nconn.start()
 
 
 if __name__ == "__main__":
