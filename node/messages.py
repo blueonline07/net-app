@@ -20,7 +20,7 @@ class Message(ABC):
     elif data[0] == 4:
       return HaveMessage(int.from_bytes(data[1:], 'big'))
     elif data[0] == 5:
-      return BitfieldMessage(data[5:])
+      return BitfieldMessage(data[1:])
     elif data[0] == 6:
       return RequestMessage(int.from_bytes(data[1:5], 'big'), int.from_bytes(data[5:9], 'big'), int.from_bytes(data[9:], 'big'))
     elif data[0] == 7:
@@ -34,7 +34,7 @@ class HandshakeMessage(Message):
     self.info_hash = info_hash
     self.peer_id = peer_id
 
-  def __str__(self):
+  def __repr__(self):
     return f"Hanshake msg - protocol_name: {self.protocol_name}, info_hash: {self.info_hash}, peer_id: {self.peer_id}"
 
   def encode(self):
@@ -67,7 +67,7 @@ class BitfieldMessage(Message):
   def __init__(self, bitfield):
     self.bitfield = bitfield
 
-  def __str__(self):
+  def __repr__(self):
     return f"Bitfield: {self.bitfield}"
   
   def encode(self):
@@ -79,7 +79,7 @@ class RequestMessage(Message):
     self.begin = begin
     self.length = length
   
-  def __str__(self):
+  def __repr__(self):
     return f"Request msg - index: {self.index}, begin: {self.begin}, length: {self.length}"
   
   def encode(self):
@@ -91,7 +91,7 @@ class PieceMessage(Message):
     self.begin = begin
     self.block = block
   
-  def __str__(self):
+  def __repr__(self):
     return f"Piece msg - index: {self.index}, begin: {self.begin}, block: {self.block}"
   
   def encode(self):
