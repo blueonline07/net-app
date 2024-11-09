@@ -46,7 +46,11 @@ def parse_torrent_file(torrent_file):
         torrent_data = f.read()
         torrent_dict = bencodepy.decode(torrent_data)
         return torrent_dict
-
+def parse_torrent_pieces_hash(torrent_file):
+    with open(torrent_file, "rb") as f:
+        torrent_data = f.read()
+        torrent_dict = bencodepy.decode(torrent_data)
+        return torrent_dict['pieces'.encode('ascii')]
 def parse_torrent_file_info(torrent_file):
     with open(torrent_file, "rb") as f:
         torrent_data = f.read()
