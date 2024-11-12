@@ -4,52 +4,55 @@ from constants import PROTOCOL_NAME, PEER_ID, PIECE_SIZE, BLOCK_SIZE
 from messages import HandshakeMessage, InterestedMessage, RequestMessage, BitfieldMessage, Message
 import socket
 import hashlib
-dir_name = 'repo/'
+from torrent import Torrent
+dir_name = 'downloads'
 
 
 peers = [
-    {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8001},
-    # {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8002},
-    # {'peer_id': 'peer3', 'ip': '127.0.0.1', 'port': 8003}
+    # {'peer_id': PEER_ID, 'ip': '172.18.0.2', 'port': 8001},
+    # {'peer_id': PEER_ID, 'ip': '172.18.0.3', 'port': 8002},
+    {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8000},
+    # {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8008},
+    # {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8009},
 ]
 
 
-def create_piece_index_table():
-    pieces = []
-
-    files_info = parse_torrent_file_info('repo.torrent')
-    total_size = 0
-    for file in files_info:
-        total_size += file['length']
+def create_piece_index_table(torrent):
+    files = torrent.files
+    total_size = sum([file['length'] for file in files])
     
     total_pieces = total_size // PIECE_SIZE + 1
-    for i in range(total_pieces):
-        pieces.append([])
-    
-    return pieces
 
-def send_handshake(conn):
-    conn.sendall(HandshakeMessage(PROTOCOL_NAME, get_info_hash('repo.torrent'), PEER_ID).encode())
+    return [[] for _ in range(total_pieces)]
+
+def send_handshake(conn, pieces):
+    conn.sendall(HandshakeMessage(PROTOCOL_NAME, get_info_hash(dir_name + '.torrent'), PEER_ID).encode())
+    status = recv_all(conn, 1)
+    if status == 0xFF:
+        print("Handshake failed")
+        conn.close()
+        return
+    print(len(pieces))
     msg_rcv = recv_all(conn, 49 + len(PROTOCOL_NAME) + 5 + len(pieces))
-    
+
     handshake_rcv = Message.decode(msg_rcv[:49 + len(PROTOCOL_NAME)])
-
     bitfield_rcv = Message.decode(msg_rcv[49 + 4 + len(PROTOCOL_NAME):])
-
     return handshake_rcv, bitfield_rcv
         
 def connect_to_peer(ip, port, pieces):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print(f"Connecting to {ip}:{port}")
     client.connect((ip, port))
-    print(client)
-    handshake_rcv, bitfield_rcv = send_handshake(client)
-    print(handshake_rcv, bitfield_rcv)
+
+    handshake_rcv, bitfield_rcv = send_handshake(client, pieces)
+
+    # TODO: if peer_id not in peers, close connection
 
     for index, byte in enumerate(bitfield_rcv.bitfield):
         if byte == 1:
            pieces[index].append((index, client))
 
-def request_block(conn, piece_index):
+def request_block(conn, piece_index, torrent):
     piece = b''
     begin = 0
     print(f"request for piece {piece_index}")
@@ -63,14 +66,15 @@ def request_block(conn, piece_index):
         piece += Message.decode(msg_rcv).block
         begin += BLOCK_SIZE
     print(f"received piece {piece_index}")
-    pieces_hash = parse_torrent_pieces_hash('repo.torrent')
+
     piece_hash = hashlib.sha1(piece).digest()
-    if pieces_hash[piece_index] == piece_hash:
+    if torrent.pieces[piece_index] == piece_hash:
         print(f"Piece {piece_index} is correct")
-        write_to_file(piece_index, piece)
+        # write_to_file(piece_index, piece, torrent)
+        # write to bitfield, send have message
 
 def write_to_file(piece_index, piece):
-    files_info = parse_torrent_file_info('repo.torrent')
+    files_info = parse_torrent_file_info(dir_name + '.torrent')
     file_position = piece_index * PIECE_SIZE
     while len(files_info) and file_position > files_info[0]['length']:
         file_position -= files_info[0]['length']
@@ -78,21 +82,22 @@ def write_to_file(piece_index, piece):
     if len(files_info) == 0:
         return
     if file_position + len(piece) > files_info[0]['length']:
-        with open(dir_name + files_info[0]['path'], 'ab') as f:
+        with open(files_info[0]['path'], 'ab') as f:
             f.seek(file_position)
             f.write(piece[:files_info[0]['length'] - file_position])
         if len(files_info) > 1:
-            with open(dir_name + files_info[1]['path'], 'ab') as f:
+            with open(files_info[1]['path'], 'ab') as f:
                 f.write(piece[files_info[0]['length'] - file_position:])
     else:
-        with open(dir_name + files_info[0]['path'], 'ab') as f:
+        with open(files_info[0]['path'], 'ab') as f:
             f.seek(file_position)
             f.write(piece)
 
         
-if __name__ == "__main__":
-    # create_multifile_torrent(["test1.txt", "test2.txt", "test3.txt"])  
-    pieces = create_piece_index_table()
+def run_client(torrent_file_name):
+    torrent, pieces = Torrent.from_torrent_file(torrent_file_name)
+    # torrent =  Torrent('downloads', ["repository/test1.txt", "repository/test2.txt", "repository/test3.txt"])
+    # pieces = create_piece_index_table(torrent)
     #handshaking and create piece index table
     threads = []
     for peer in peers:
@@ -101,11 +106,18 @@ if __name__ == "__main__":
         threads.append(thread)
     for t in threads:
         t.join()
+    
     pieces.sort(key=lambda x: len(x))
+    print(pieces)
 
     for piece in pieces:
         if len(piece) == 0:
             continue
-        request_block(piece[0][1], piece[0][0])
+        request_block(piece[0][1], piece[0][0], torrent)
     
     print("Finished")
+
+# class Client:
+#     def __init__(self, torrent_file):
+#         self.torrent, self.pieces = Torrent.from_torrent_file(torrent_file)
+#         self.threads = []

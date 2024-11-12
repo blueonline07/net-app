@@ -25,15 +25,18 @@ def generate_pieces(file_paths, piece_length):
     buffer = b""
     
     for file_path in file_paths:
-        with open(file_path, "rb") as f:
-            while True:
-                chunk = f.read(piece_length - len(buffer))
-                if not chunk:
-                    break
-                buffer += chunk
-                if len(buffer) == piece_length:
-                    pieces.append(hashlib.sha1(buffer).digest())
-                    buffer = b""
+        try:
+            with open(file_path, "rb") as f:
+                while True:
+                    chunk = f.read(piece_length - len(buffer))
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    if len(buffer) == piece_length:
+                        pieces.append(hashlib.sha1(buffer).digest())
+                        buffer = b""
+        except FileNotFoundError:
+            continue
 
     # Add final piece if buffer is not empty
     if buffer:
@@ -66,7 +69,7 @@ def parse_torrent_file_info(torrent_file):
         return files_info
         
 
-def create_multifile_torrent(file_paths, piece_length=PIECE_SIZE):
+def create_multifile_torrent(name, file_paths):
     # Gather file info for the "files" field
     files_info = []
     for file_path in file_paths:
@@ -78,24 +81,45 @@ def create_multifile_torrent(file_paths, piece_length=PIECE_SIZE):
         })
 
     # Generate pieces
-    pieces = generate_pieces(file_paths, piece_length)
+    pieces = generate_pieces(file_paths, PIECE_SIZE)
 
     # Torrent metadata structure
     torrent_dict = {
         "announce": TRACKER_URL,
         "info": {
-            "name": "repo",  # Name of the torrent, usually the folder name
+            "name": name,  # Name of the torrent, usually the folder name
             "files": files_info,
         },
-        "piece length": piece_length,
+        "piece length": PIECE_SIZE,
         "pieces": pieces
     }
-    print(torrent_dict)
 
     # Encode and save as .torrent
     encoded_torrent = bencodepy.encode(torrent_dict)
-    torrent_file = "repo.torrent"
+    torrent_file = name + ".torrent"
     with open(torrent_file, "wb") as f:
         f.write(encoded_torrent)
 
-    print(f"repo.torrent file created: {torrent_file}")
+    print(f"Torrent file created: {torrent_file}")
+    return torrent_file
+
+def get_bitfield(torrent_file):
+    files_info = parse_torrent_file_info(torrent_file)
+    print(files_info)
+    total_length = sum(file["length"] for file in files_info)
+    num_pieces = total_length // PIECE_SIZE + 1
+    print(total_length, num_pieces)
+    bitfield = bytearray(num_pieces)
+    files = []
+
+    for file in files_info:
+        files.append(file["path"])
+    
+    pieces = generate_pieces(files, PIECE_SIZE)
+    original_pieces = parse_torrent_pieces_hash(torrent_file)
+    
+    for (i, piece) in enumerate(pieces):
+        if piece in original_pieces:
+            bitfield[i] ^= 0x01
+    
+    return bitfield
