@@ -4,37 +4,21 @@ from constants import PIECE_SIZE, PROTOCOL_NAME, PEER_ID, PEER_PORT
 import socket
 from threading import Thread
 import os
+from torrent import Torrent
 dir_name = 'downloads'
 
-def recv_handshake(conn):
+def receive_handshake(conn):
     msg = recv_all(conn, 48 + len(PROTOCOL_NAME))
     handshake_rcv = Message.decode(b'\x13' + msg)
     if handshake_rcv.info_hash != get_info_hash(dir_name + '.torrent'):
         print("Invalid info hash")
         conn.sendall(0xFF)
-        conn.close
+        conn.close()
     else:
-        conn.sendall(b'\x00')
+        conn.sendall(b'\x00') #send anything not 0xFF
     conn.sendall(HandshakeMessage(PROTOCOL_NAME, get_info_hash(dir_name + '.torrent'), PEER_ID).encode())
     bitfield = get_bitfield(dir_name + '.torrent')
-    # bitfield =  b'\x01' * 13 + b'\x00'
-    # print(bitfield)
     conn.sendall(BitfieldMessage(bitfield).encode())
-
-def receive_msg(conn):
-    length = recv_all(conn,  3)
-    # print(length)
-    length = int.from_bytes(length, 'big')
-    if length == 0:
-        return
-    message = recv_all(conn,  length)
-    # print(message)
-    message = Message.decode(message)
-    if isinstance(message, InterestedMessage):
-        conn.sendall(UnchokeMessage().encode())
-    elif isinstance(message, RequestMessage):
-        receive_request(conn, message)
-
 
 
 def receive_request(conn, message): #send the block requested
@@ -77,34 +61,37 @@ def receive_request(conn, message): #send the block requested
 
 def handle_connection(conn, addr):
     while True:
-        first_byte = recv_all(conn, 1)
+        first_byte = conn.recv(1)
         if first_byte == b'\x13':
-            recv_handshake(conn)
-            # print("Handshake sent")
+            receive_handshake(conn)
         elif first_byte == b'\x00':
-            # print("Message received")
-            receive_msg(conn)
+            length = int.from_bytes(recv_all(conn, 3), 'big')
+            print(length)
+            msg = Message.decode(recv_all(conn, length)) 
+            if isinstance(msg, RequestMessage):
+                receive_request(conn, msg)
+        
+
         elif first_byte == b'':
-            # print("Connection closed")
+            print("Connection closed")
             conn.close()
             break
-    
 
-def run_server(port):
-    if port is None:
-        port = int(os.environ.get('PEER_PORT', PEER_PORT))
-    else:
-        port = int(port)
-    # port = int(os.environ.get('PEER_PORT', PEER_PORT))
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(('0.0.0.0', port))
-    server.listen()
-    print(f"Server started on {socket.gethostbyname(socket.gethostname())}:{port}")
 
-    while True:
-        conn, addr = server.accept()
-        print(f"Connection from {addr}")
-        nconn = Thread(target=handle_connection, args=(conn,addr))
-        nconn.start()
+class Peer:
+    def __init__(self,torrent_file_name, port):
+        self.torrent = Torrent.from_torrent_file(torrent_file_name)
+        self.port = port
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.bitfield = get_bitfield(torrent_file_name)
         
+    def start(self):
+        self.server.bind(('0.0.0.0', self.port))
+        self.server.listen(5)
+        print(f"Server started on {socket.gethostbyname(socket.gethostname())}:{self.port}")
+        while True:
+            conn, addr = self.server.accept()
+            print(f"Connection from {addr}")
+            nconn = Thread(target=handle_connection, args=(conn,addr))
+            nconn.start()

@@ -105,10 +105,10 @@ def create_multifile_torrent(name, file_paths):
 
 def get_bitfield(torrent_file):
     files_info = parse_torrent_file_info(torrent_file)
-    print(files_info)
+
     total_length = sum(file["length"] for file in files_info)
     num_pieces = total_length // PIECE_SIZE + 1
-    print(total_length, num_pieces)
+
     bitfield = bytearray(num_pieces)
     files = []
 

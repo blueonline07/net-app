@@ -16,11 +16,28 @@ class Torrent:
                 "length": file_size,
                 "path": file_name  # Split path for torrent format compatibility
             })
-        
         # Generate pieces
         self.pieces = generate_pieces(file_paths, PIECE_SIZE)
+        self.info_hash = hashlib.sha1(bencodepy.encode({"name":self.name, "files":self.files})).digest()
 
-        # Torrent metadata structure
+    @staticmethod
+    def from_torrent_file(torrent_file):
+        with open(torrent_file, "rb") as f:
+            torrent_dict = bencodepy.decode(f.read())
+            torrent_name = torrent_dict[b"info"][b"name"].decode()
+
+            file_paths = []
+            files = torrent_dict[b"info"][b"files"]
+            total_size = 0
+            for file in files:
+                file_paths.append(file[b"path"].decode()) 
+                total_size += file[b"length"]
+
+
+            return Torrent(torrent_name, file_paths), [[] for _ in range(total_size // PIECE_SIZE + 1)]
+
+
+    def create_torrent(self):
         torrent_dict = {
             "announce": TRACKER_URL,
             "info": {
@@ -33,30 +50,11 @@ class Torrent:
         self.info_hash = hashlib.sha1(bencodepy.encode(torrent_dict["info"])).digest()
         # Encode and save as .torrent
         encoded_torrent = bencodepy.encode(torrent_dict)
-        torrent_file = name + ".torrent"
+        torrent_file = self.name + ".torrent"
         try:
             with open(torrent_file, "wb") as f:
                 f.write(encoded_torrent)
                 print(f"Torrent file created: {torrent_file}")
         except Exception as e:
             print(f"Error creating torrent file: {e}")
-
-    @staticmethod
-    def from_torrent_file(torrent_file):
-        with open(torrent_file, "rb") as f:
-            torrent_dict = bencodepy.decode(f.read())
-            torrent_name = torrent_dict[b"info"][b"name"].decode()
-            print(torrent_name)
-            file_paths = []
-            files = torrent_dict[b"info"][b"files"]
-            total_size = 0
-            for file in files:
-                file_paths.append(file[b"path"].decode()) 
-                total_size += file[b"length"]
-
-            print(file_paths)
-            return Torrent(torrent_name, file_paths), [[] for _ in range(total_size // PIECE_SIZE + 1)]
-
-
-
   
