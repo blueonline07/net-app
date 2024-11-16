@@ -3,8 +3,8 @@ from utils import parse_torrent_file_info, get_info_hash, recv_all, get_bitfield
 from constants import PIECE_SIZE, PROTOCOL_NAME, PEER_ID, PEER_PORT
 import socket
 from threading import Thread
-import os
 from torrent import Torrent
+
 dir_name = 'downloads'
 
 def receive_handshake(conn):
@@ -66,7 +66,6 @@ def handle_connection(conn, addr):
             receive_handshake(conn)
         elif first_byte == b'\x00':
             length = int.from_bytes(recv_all(conn, 3), 'big')
-            print(length)
             msg = Message.decode(recv_all(conn, length)) 
             if isinstance(msg, RequestMessage):
                 receive_request(conn, msg)
@@ -78,13 +77,14 @@ def handle_connection(conn, addr):
             break
 
 
-class Peer:
+class Server:
     def __init__(self,torrent_file_name, port):
         self.torrent = Torrent.from_torrent_file(torrent_file_name)
         self.port = port
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.bitfield = get_bitfield(torrent_file_name)
+
         
     def start(self):
         self.server.bind(('0.0.0.0', self.port))

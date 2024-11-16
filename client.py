@@ -5,16 +5,11 @@ from messages import HandshakeMessage, InterestedMessage, RequestMessage, Bitfie
 import socket
 import hashlib
 from torrent import Torrent
+from strategy import TitOrTat
 dir_name = 'downloads'
 
 
-peers = [
-    # {'peer_id': PEER_ID, 'ip': '172.18.0.2', 'port': 8001},
-    # {'peer_id': PEER_ID, 'ip': '172.18.0.3', 'port': 8002},
-    {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8000},
-    # {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8008},
-    # {'peer_id': PEER_ID, 'ip': '127.0.0.1', 'port': 8009},
-]
+
 
 
 def write_to_file(piece_index, piece):
@@ -38,12 +33,15 @@ def write_to_file(piece_index, piece):
             f.write(piece)
 
 class Downloader:
-    def __init__(self, torrent_file):
+    def __init__(self, torrent_file, peers):
         self.torrent, self.pieces = Torrent.from_torrent_file(torrent_file)
         # self.peers = [] # TODO: get peers from tracker
         self.peers = peers
+        self.downloaded_pieces = [] # list of pieces index that have been downloaded
+        self.strategy = TitOrTat(self.peers)
 
     def start(self):
+
         conn_threads = []
         for peer in peers:
             thread = Thread(target=self.connect_to_peer, args=(peer['ip'], peer['port']))
@@ -64,13 +62,13 @@ class Downloader:
         
         download_threads = []
         for peer, pieces in demand_peers.items():
-            # thread = Thread(target=self.download_pieces, args=(peer, pieces))
-            # thread.start()
-            # download_threads.append(thread)
-            self.download_pieces(peer, pieces)
+            thread = Thread(target=self.download_pieces, args=(peer, pieces))
+            thread.start()
+            download_threads.append(thread)
+            # self.download_pieces(peer, pieces)
         
-        # for t in download_threads:
-        #     t.join()
+        for t in download_threads:
+            t.join()
 
         print("Finished")
     
@@ -99,6 +97,8 @@ class Downloader:
         return handshake_rcv, bitfield_rcv
     
     def request_block(self, conn, piece_index):
+        if piece_index in self.downloaded_pieces:
+            return False
         piece = b''
         begin = 0
         print(f"request for piece {piece_index}")
@@ -116,11 +116,18 @@ class Downloader:
         piece_hash = hashlib.sha1(piece).digest()
         if self.torrent.pieces[piece_index] == piece_hash:
             print(f"Piece {piece_index} is correct")
+
             # write_to_file(piece_index, piece, torrent)
             # write to bitfield, send have message
+            return True
+        else:
+            return False
 
     def download_pieces(self, conn, pieces):
         for piece_index in pieces:
-            self.request_block(conn, piece_index)
+            if self.request_block(conn, piece_index):
+                self.downloaded_pieces.append(piece_index)
+                # send have message
+            
 
 
