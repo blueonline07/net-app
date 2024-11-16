@@ -43,7 +43,7 @@ class Downloader:
     def start(self):
 
         conn_threads = []
-        for peer in peers:
+        for peer in self.peers:
             thread = Thread(target=self.connect_to_peer, args=(peer['ip'], peer['port']))
             thread.start()
             conn_threads.append(thread)
@@ -51,7 +51,7 @@ class Downloader:
             t.join()
         
         self.pieces.sort(key=lambda x: len(x))
-
+        print(self.strategy.get_unchoke_peers(4))
         demand_peers = {}
         for piece in self.pieces:
             if len(piece) == 0:
@@ -65,12 +65,14 @@ class Downloader:
             thread = Thread(target=self.download_pieces, args=(peer, pieces))
             thread.start()
             download_threads.append(thread)
-            # self.download_pieces(peer, pieces)
         
         for t in download_threads:
             t.join()
 
-        print("Finished")
+        if len(self.downloaded_pieces) == len(self.torrent.pieces):
+            print("Download completed, you downloaded the whole file")
+        else:
+            print("Download failed. Some pieces are missing")
     
     def connect_to_peer(self, ip, port):
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -78,6 +80,7 @@ class Downloader:
         client.connect((ip, port))
 
         handshake_rcv, bitfield_rcv = self.send_handshake(client)
+        print(bitfield_rcv.bitfield)
         for index, byte in enumerate(bitfield_rcv.bitfield):
             if byte == 1:
                 self.pieces[index].append((index, client))
@@ -89,7 +92,6 @@ class Downloader:
             print("Handshake failed")
             conn.close()
             return
-        print(len(self.pieces))
         msg_rcv = recv_all(conn, 49 + len(PROTOCOL_NAME) + 5 + len(self.pieces))
 
         handshake_rcv = Message.decode(msg_rcv[:49 + len(PROTOCOL_NAME)])
@@ -101,22 +103,22 @@ class Downloader:
             return False
         piece = b''
         begin = 0
-        print(f"request for piece {piece_index}")
+        print(f"request for piece {piece_index} from {conn.getpeername()}")
         while begin < PIECE_SIZE:
-            block_size = min(BLOCK_SIZE, PIECE_SIZE - begin)
-            conn.sendall(RequestMessage(piece_index, begin, block_size).encode())
+            conn.sendall(RequestMessage(piece_index, begin, BLOCK_SIZE).encode())
             length = recv_all(conn, 4)
             msg_rcv = recv_all(conn, int.from_bytes(length, 'big'))
-            if msg_rcv == b'' or Message.decode(msg_rcv).block == b'':
+            if msg_rcv == b'':
                 break
             piece += Message.decode(msg_rcv).block
+            if len(Message.decode(msg_rcv).block) < BLOCK_SIZE:
+                break
             begin += BLOCK_SIZE
+            
         print(f"received piece {piece_index}")
-
         piece_hash = hashlib.sha1(piece).digest()
         if self.torrent.pieces[piece_index] == piece_hash:
             print(f"Piece {piece_index} is correct")
-
             # write_to_file(piece_index, piece, torrent)
             # write to bitfield, send have message
             return True
