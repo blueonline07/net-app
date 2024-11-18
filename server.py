@@ -1,25 +1,28 @@
-from messages import HandshakeMessage, BitfieldMessage, InterestedMessage,RequestMessage, UnchokeMessage, PieceMessage, Message
+from messages import HandshakeMessage, BitfieldMessage, InterestedMessage,RequestMessage, UnchokeMessage, PieceMessage, Message, ChokeMessage
 from utils import recv_all, get_bitfield
 from constants import PIECE_SIZE, PROTOCOL_NAME, PEER_ID, PEER_PORT
 import socket
 from threading import Thread
 from torrent import Torrent
-import random
+import random, string, secrets
 
 
 class Server:
-    def __init__(self,torrent_file_name, port):
+    def __init__(self,torrent_file_name, port, strategy):
         self.torrent, self.pieces = Torrent.from_torrent_file(torrent_file_name)
         self.port = port
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.bitfield = bytes(random.choice(b'\x00\x01') for _ in range(14))
-
+        self.strategy = strategy
+        characters = string.ascii_letters + string.digits + string.punctuation
+        self.peer_id = ''.join(secrets.choice(characters) for _ in range(20))
         
     def start(self):
         self.server.bind(('0.0.0.0', self.port))
         self.server.listen(5)
-        print(f"Server started on {socket.gethostbyname(socket.gethostname())}:{self.port}")
+        print(f"Peer {self.peer_id} listening on {socket.gethostbyname(socket.gethostname())}:{self.port}")
+        
         while True:
             conn, addr = self.server.accept()
             print(f"Connection from {addr}")
@@ -36,6 +39,12 @@ class Server:
                 msg = Message.decode(recv_all(conn, length)) 
                 if isinstance(msg, RequestMessage):
                     self.recv_request(conn, msg)
+                if isinstance(msg, InterestedMessage):
+                    ip, port = conn.getpeername()
+                    if ip not in self.strategy.get_unchoke_peers(5):
+                        conn.sendall(ChokeMessage().encode())
+                    else:
+                        conn.sendall(UnchokeMessage().encode())
             elif first_byte == b'':
                 print("Connection closed")
                 conn.close()

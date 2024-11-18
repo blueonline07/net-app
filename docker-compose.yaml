@@ -2,16 +2,12 @@ services:
   peer1:
     image: netapp
     networks:
-      - p2pnetwork
-    environment:
-      - PEER_PORT=8001
+      - p2p
   peer2:
     image: netapp
     networks:
-      - p2pnetwork
-    environment:
-      - PEER_PORT=8002
+      - p2p
 
 networks:
-  p2pnetwork:
+  p2p:
     driver: bridge

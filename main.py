@@ -3,6 +3,7 @@ from server import Server
 from peer import Peer
 import threading
 import argparse
+from strategy import TitOrTat
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CLI for BitTorrent peer')
@@ -14,7 +15,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if args.test:
-        peers = [Peer(torrent=args.torrent, port=test_port) for test_port in range(8000, 8005)]
+        peers = [Peer(torrent=args.torrent, port=test_port, strategy=TitOrTat()) for test_port in range(8000, 8005)]
         threads = [threading.Thread(target=peer.start) for peer in peers]
         peer_list = []
         for peer in peers:
@@ -27,14 +28,21 @@ if __name__ == '__main__':
         for thread in threads:
             thread.start()
 
-        downloader = Downloader(args.torrent, peer_list)
+        downloader = Downloader(args.torrent, peer_list, TitOrTat())
         downloader.start()
 
     if args.runserver:
-        server = Server(torrent_file_name=args.torrent,port=args.port)
+        strategy = TitOrTat()
+        strategy.test_init_downloaded_from()
+        server = Server(torrent_file_name=args.torrent,port=args.port, strategy=strategy)
         thread = threading.Thread(target=server.start)
         thread.start()
   
     if args.download:
-        downloader = Downloader(args.torrent, peers)
+        peers = [
+            {'ip':'172.18.0.2', 'port':8001},
+            {'ip':'172.18.0.4', 'port':8002},
+            {'ip':'172.18.0.5', 'port':8003}
+        ]
+        downloader = Downloader(args.torrent, peers, strategy=TitOrTat())
         downloader.start()

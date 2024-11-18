@@ -3,13 +3,26 @@ import heapq
 num_peers = 4
 
 class TitOrTat:
-    def __init__(self, peers):
-        self.peer_downloads = dict() # keep track of how much you have downloaded from each peer
-        for peer in peers:
-            self.peer_downloads[peer['peer_id']] = 0
+    def __init__(self):
+        self.downloaded_from= dict() # keep track of how much you have downloaded from each peer
+
+    def init_downloaded_from(self, conn):
+        # self.downloaded_from[conn] = 0
+        ip, port = conn.getpeername()
+        self.downloaded_from[ip] = 0
     
     def get_unchoke_peers(self, num_peers):
-        return heapq.nlargest(num_peers, self.peer_downloads, key=self.peer_downloads.get)
+        l = heapq.nlargest(num_peers, self.downloaded_from.items(), key=lambda x: x[1])
+        return [peer for peer, _ in l]
     
-    def inc_peer_downloaded(self, peer_id):
-        self.peer_downloads[peer_id] += 1
+    def inc_peer_downloaded(self, conn):
+        self.downloaded_from[conn] += 1
+
+    def test_init_downloaded_from(self):
+        self.downloaded_from = {
+            '172.18.0.2' : 8,
+            '172.18.0.3' : 7,
+            '172.18.0.4' : 3,
+            '172.18.0.5' : 4,
+            '172.18.0.6' : 2
+        }

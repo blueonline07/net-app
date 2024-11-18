@@ -34,7 +34,7 @@ class Torrent:
                 total_size += file[b"length"]
 
 
-            return Torrent(torrent_name, file_paths), [[] for _ in range(total_size // PIECE_SIZE + 1)]
+            return Torrent(torrent_name, file_paths), {k : [] for k in range(total_size // PIECE_SIZE + 1)}
 
 
     def create_torrent(self):
