@@ -1,6 +1,6 @@
 from messages import HandshakeMessage, BitfieldMessage, InterestedMessage,RequestMessage, UnchokeMessage, PieceMessage, Message, ChokeMessage
 from utils import recv_all, get_bitfield
-from constants import PIECE_SIZE, PROTOCOL_NAME, PEER_ID, PEER_PORT
+from constants import PIECE_SIZE, PROTOCOL_NAME
 import socket
 from threading import Thread
 from torrent import Torrent
@@ -40,11 +40,14 @@ class Server:
                 if isinstance(msg, RequestMessage):
                     self.recv_request(conn, msg)
                 if isinstance(msg, InterestedMessage):
-                    ip, port = conn.getpeername()
-                    if ip not in self.strategy.get_unchoke_peers(5):
-                        conn.sendall(ChokeMessage().encode())
-                    else:
-                        conn.sendall(UnchokeMessage().encode())
+                    # ip, port = conn.getpeername()
+                    # if ip not in self.strategy.get_unchoke_peers(5):
+                    #     conn.sendall(ChokeMessage().encode())
+                    # else:
+                    #     conn.sendall(UnchokeMessage().encode())
+
+                    
+                    conn.sendall(UnchokeMessage().encode())   #test only, rm this on final
             elif first_byte == b'':
                 print("Connection closed")
                 conn.close()
@@ -59,7 +62,7 @@ class Server:
         else:
             conn.sendall(b'\x00') #send anything not 0xFF
         
-        conn.sendall(HandshakeMessage(PROTOCOL_NAME, self.torrent.info_hash, PEER_ID).encode())
+        conn.sendall(HandshakeMessage(PROTOCOL_NAME, self.torrent.info_hash, self.peer_id).encode())
         conn.sendall(BitfieldMessage(self.bitfield).encode())
 
     def recv_request(self,conn, message):

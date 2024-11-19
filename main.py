@@ -4,16 +4,20 @@ from peer import Peer
 import threading
 import argparse
 from strategy import TitOrTat
+from torrent import Torrent
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CLI for BitTorrent peer')
+    parser.add_argument('--create', type=str, help='Create a torrent file')
     parser.add_argument('--torrent',type=str, help='Specify the torrent file to download')
     parser.add_argument('--test', action='store_true', help='test the p2p network')
     parser.add_argument('--runserver', action='store_true', help='Run the server')
     parser.add_argument('--port',type=int, help='Specify the port to run the server on')
     parser.add_argument('--download', action='store_true', help='Download the torrent')
     args = parser.parse_args()
-    
+    if args.create:
+        torrent = Torrent.create_torrent_file(args.create)
+
     if args.test:
         peers = [Peer(torrent=args.torrent, port=test_port, strategy=TitOrTat()) for test_port in range(8000, 8005)]
         threads = [threading.Thread(target=peer.start) for peer in peers]
@@ -21,7 +25,7 @@ if __name__ == '__main__':
         for peer in peers:
             print(peer)
             peer_list.append({
-                'peer_id':peer.peer_id,
+                'peer_id':peer.server.peer_id,
                 'ip':'127.0.0.1',
                 'port':peer.server.port
             })

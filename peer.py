@@ -9,7 +9,7 @@ class Peer:
         self.server = Server(torrent, port, strategy)
     
     def __repr__(self):
-        return f"peer_id: {self.peer_id} - port: {self.server.port} - bitfield: {self.server.bitfield}"
+        return f"peer_id: {self.server.peer_id} - port: {self.server.port} - bitfield: {self.server.bitfield}"
 
     def start(self):
         self.server.start()

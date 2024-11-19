@@ -33,30 +33,28 @@ class Downloader:
         self.peers = peers  # TODO: get peers from tracker
         self.downloaded_pieces = [] # list of pieces index that have been downloaded
         self.strategy = strategy
-        self.sources = {}
+        self.sources = {} # key: conn, value: list of pieces index
         self.requesting = set()
 
     def start(self):
         conn_threads = []
         for peer in self.peers:
-            thread = Thread(target=self.connect_to_peer, args=(peer['ip'], peer['port']))
+            thread = Thread(target=self.connect_to_peer, args=(peer['peer_id'], peer['ip'], peer['port']))
             thread.start()
             conn_threads.append(thread)
         for t in conn_threads:
             t.join()
         
         # pieces = {k : v for k, v in sorted(self.pieces.items(), key=lambda item: len(item[1]))}
-        # self.pieces = sorted(self.pieces.items(), key=lambda item: len(item[1]))
-
+        self.pieces = sorted(self.pieces.items(), key=lambda item: len(item[1]))
         # key: conn, value: list of pieces index
 
-        for piece_index in self.pieces:   #piece = [conn1, conn2, ...]
-            if len(self.pieces[piece_index]) > 0:
-                for conn in self.pieces[piece_index]:
+        for piece_index, conns in self.pieces:   #piece = [conn1, conn2, ...]
+            if len(conns) > 0:
+                for conn in conns:
                     self.send_interested(conn)
                     msg_rcv = recv_all(conn, 5)
                     msg = Message.decode(msg_rcv[4:])
-                    print(msg)
                     if isinstance(msg, UnchokeMessage):
                         self.sources[conn].append(piece_index)
                 
@@ -75,12 +73,17 @@ class Downloader:
         else:
             print("Download failed. Some pieces are missing")
     
-    def connect_to_peer(self, ip, port):
+    def connect_to_peer(self,peer_id, ip, port):
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Connecting to {ip}:{port}")
         client.connect((ip, port))
-        self.strategy.init_downloaded_from(client)
+        self.strategy.init_downloaded_from(ip)
         handshake_rcv, bitfield_rcv = self.send_handshake(client)
+        print(f"Remote peer id: {handshake_rcv.peer_id}, requested peer_id {peer_id}")
+        if handshake_rcv.info_hash != self.torrent.info_hash or handshake_rcv.peer_id != peer_id:
+            print("Handshake failed")
+            client.close()
+            return
         self.sources[client] = []
         for index, byte in enumerate(bitfield_rcv.bitfield):
             if byte == 1:

@@ -20,13 +20,13 @@ def get_info_hash(torrent_file):
         info_dict = torrent_dict[b"info"]
         return hashlib.sha1(bencodepy.encode(info_dict)).digest()
 
-def generate_pieces(file_paths, piece_length):
+def generate_pieces(files, piece_length):
     pieces = []
     buffer = b""
     
-    for file_path in file_paths:
+    for file in files:
         try:
-            with open(file_path, "rb") as f:
+            with open(file, "rb") as f:
                 while True:
                     chunk = f.read(piece_length - len(buffer))
                     if not chunk:
@@ -36,7 +36,7 @@ def generate_pieces(file_paths, piece_length):
                         pieces.append(hashlib.sha1(buffer).digest())
                         buffer = b""
         except FileNotFoundError:
-            continue
+            print(f"File {file} not found")
 
     # Add final piece if buffer is not empty
     if buffer:
