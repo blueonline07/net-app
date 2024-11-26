@@ -16,6 +16,7 @@ class Downloader:
         self.strategy = strategy
         self.sources = {} # key: conn, value: list of pieces index
         self.requesting = set()
+        self.downloading_threads = []
 
     def start(self):
         conn_threads = []
@@ -39,14 +40,11 @@ class Downloader:
                         self.sources[conn].append(piece_index)
                 
 
-        download_threads = []
         for peer, pieces in self.sources.items():
             thread = Thread(target=self.download_pieces, args=(peer, pieces))
             thread.start()
-            download_threads.append(thread)
+            self.downloading_threads.append(thread)
         
-        for t in download_threads:
-            t.join()
 
         if len(self.downloaded_pieces) == len(self.torrent.pieces):
             print("Download completed, you downloaded the whole file")
@@ -158,4 +156,5 @@ class Downloader:
                 file_position = 0
 
     def stop(self):
-        pass
+        for t in self.downloading_threads:
+            t.join()
