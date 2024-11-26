@@ -16,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument('--download', action='store_true', help='Download the torrent')
     args = parser.parse_args()
     if args.create:
-        torrent = Torrent.create_torrent_file(args.create)
+        Torrent.create_torrent_file(args.create)
 
     if args.test:
         peers = [Peer(torrent=args.torrent, port=test_port, strategy=TitOrTat()) for test_port in range(8000, 8005)]
@@ -38,15 +38,17 @@ if __name__ == '__main__':
     if args.runserver:
         strategy = TitOrTat()
         strategy.test_init_downloaded_from()
-        server = Server(torrent_file_name=args.torrent,port=args.port, strategy=strategy)
+        server = Server([Torrent(args.torrent)],port=args.port, strategy=strategy)
         thread = threading.Thread(target=server.start)
         thread.start()
   
     if args.download:
         peers = [
-            {'ip':'172.18.0.2', 'port':8001},
-            {'ip':'172.18.0.4', 'port':8002},
-            {'ip':'172.18.0.5', 'port':8003}
+            # {'ip':'172.18.0.2', 'port':8001},
+            # {'ip':'172.18.0.4', 'port':8002},
+            # {'ip':'172.18.0.5', 'port':8003}
+            # {'peer_id':"DlcCX7j*$6!A,]%WF?qu", 'ip':'127.0.0.1', 'port':8001},
+            {'peer_id':'DlcCX7j*$6!A,]%WF?qu', 'ip':'127.0.0.1', 'port':8000},
         ]
         downloader = Downloader(args.torrent, peers, strategy=TitOrTat())
         downloader.start()

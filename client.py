@@ -1,35 +1,16 @@
 from threading import Thread
-from utils import get_info_hash, create_multifile_torrent, parse_torrent_file_info, recv_all, parse_torrent_pieces_hash
 from constants import PROTOCOL_NAME, PEER_ID, PIECE_SIZE, BLOCK_SIZE
 from messages import HandshakeMessage, InterestedMessage, RequestMessage, BitfieldMessage, Message, UnchokeMessage
 import socket
 import hashlib
 from torrent import Torrent
-dir_name = 'downloads'
+import os
 
-def write_to_file(piece_index, piece):
-    files_info = parse_torrent_file_info(dir_name + '.torrent')
-    file_position = piece_index * PIECE_SIZE
-    while len(files_info) and file_position > files_info[0]['length']:
-        file_position -= files_info[0]['length']
-        files_info.pop(0)
-    if len(files_info) == 0:
-        return
-    if file_position + len(piece) > files_info[0]['length']:
-        with open(files_info[0]['path'], 'ab') as f:
-            f.seek(file_position)
-            f.write(piece[:files_info[0]['length'] - file_position])
-        if len(files_info) > 1:
-            with open(files_info[1]['path'], 'ab') as f:
-                f.write(piece[files_info[0]['length'] - file_position:])
-    else:
-        with open(files_info[0]['path'], 'ab') as f:
-            f.seek(file_position)
-            f.write(piece)
 
 class Downloader:
     def __init__(self, torrent_file, peers, strategy):
-        self.torrent, self.pieces = Torrent.from_torrent_file(torrent_file)
+        self.torrent = Torrent(torrent_file)
+        self.pieces = {index: [] for index in range(len(self.torrent.pieces))}
         self.peers = peers  # TODO: get peers from tracker
         self.downloaded_pieces = [] # list of pieces index that have been downloaded
         self.strategy = strategy
@@ -48,12 +29,11 @@ class Downloader:
         # pieces = {k : v for k, v in sorted(self.pieces.items(), key=lambda item: len(item[1]))}
         self.pieces = sorted(self.pieces.items(), key=lambda item: len(item[1]))
         # key: conn, value: list of pieces index
-
         for piece_index, conns in self.pieces:   #piece = [conn1, conn2, ...]
             if len(conns) > 0:
                 for conn in conns:
                     self.send_interested(conn)
-                    msg_rcv = recv_all(conn, 5)
+                    msg_rcv = conn.recv(5)
                     msg = Message.decode(msg_rcv[4:])
                     if isinstance(msg, UnchokeMessage):
                         self.sources[conn].append(piece_index)
@@ -72,6 +52,8 @@ class Downloader:
             print("Download completed, you downloaded the whole file")
         else:
             print("Download failed. Some pieces are missing")
+
+        print(self.torrent.files_info)
     
     def connect_to_peer(self,peer_id, ip, port):
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -79,11 +61,10 @@ class Downloader:
         client.connect((ip, port))
         self.strategy.init_downloaded_from(ip)
         handshake_rcv, bitfield_rcv = self.send_handshake(client)
-        print(f"Remote peer id: {handshake_rcv.peer_id}, requested peer_id {peer_id}")
-        if handshake_rcv.info_hash != self.torrent.info_hash or handshake_rcv.peer_id != peer_id:
-            print("Handshake failed")
-            client.close()
-            return
+        # if handshake_rcv.info_hash != self.torrent.info_hash or handshake_rcv.peer_id != peer_id:
+        #     print("Handshake failed")
+        #     client.close()
+        #     return
         self.sources[client] = []
         for index, byte in enumerate(bitfield_rcv.bitfield):
             if byte == 1:
@@ -91,16 +72,16 @@ class Downloader:
 
     def send_handshake(self, conn):
         conn.sendall(HandshakeMessage(PROTOCOL_NAME, self.torrent.info_hash, PEER_ID).encode())
-        status = recv_all(conn, 1)
+        status = conn.recv(1)
         if status == 0xFF:
             print("Handshake failed")
             conn.close()
             return
-        msg_rcv = recv_all(conn, 49 + len(PROTOCOL_NAME) + 5 + len(self.pieces))
-
-        handshake_rcv = Message.decode(msg_rcv[:49 + len(PROTOCOL_NAME)])
-        bitfield_rcv = Message.decode(msg_rcv[49 + 4 + len(PROTOCOL_NAME):])
-        return handshake_rcv, bitfield_rcv
+        handshake_rcv = conn.recv(49 + len(PROTOCOL_NAME))
+        handshake_msg = Message.decode(handshake_rcv)
+        bitfield_rcv = conn.recv(5 + len(self.pieces))
+        bitfield_msg = Message.decode(bitfield_rcv[4:])
+        return handshake_msg, bitfield_msg
     
     def request_block(self, conn, piece_index):
         while piece_index in self.requesting:
@@ -116,8 +97,8 @@ class Downloader:
         print(f"request for piece {piece_index} from {conn.getpeername()}")
         while begin < PIECE_SIZE:
             conn.sendall(RequestMessage(piece_index, begin, BLOCK_SIZE).encode())
-            length = recv_all(conn, 4)
-            msg_rcv = recv_all(conn, int.from_bytes(length, 'big'))
+            length = int.from_bytes(conn.recv(4), 'big')
+            msg_rcv = conn.recv(length)
             if msg_rcv == b'':
                 break
             piece += Message.decode(msg_rcv).block
@@ -129,7 +110,7 @@ class Downloader:
         piece_hash = hashlib.sha1(piece).digest()
         if self.torrent.pieces[piece_index] == piece_hash:
             print(f"Piece {piece_index} is correct")
-            # write_to_file(piece_index, piece, torrent)
+            self.write_to_file(piece_index, piece)
             # write to bitfield, send have message
             self.requesting.remove(piece_index)
             return True
@@ -149,3 +130,32 @@ class Downloader:
         conn.sendall(InterestedMessage().encode())
 
 
+    def write_to_file(self, piece_index, piece):
+        dir_name = 'repo/'
+        file_position = piece_index * PIECE_SIZE
+
+        file_index = 0
+        while file_position >= self.torrent.files_info[file_index]['length']:
+            file_position -= self.torrent.files_info[file_index]['length']
+            file_index += 1
+        
+        data_writed = len(piece)
+        start = 0
+        while file_index < len(self.torrent.files_info):
+            os.makedirs(os.path.dirname(dir_name + self.torrent.files_info[file_index]['path']), exist_ok=True)
+            with open(dir_name + self.torrent.files_info[file_index]['path'], 'ab') as f:
+                f.seek(file_position)
+                write_size = f.write(piece[start:self.torrent.files_info[file_index]['length'] - file_position])
+                data_writed -= write_size
+                self.torrent.files_info[file_index]['downloaded'] += write_size
+                start = self.torrent.files_info[file_index]['length'] - file_position
+            if data_writed == 0:
+                break
+            elif data_writed < 0:
+                print(piece_index, data_writed) #DEBUG
+            else:
+                file_index += 1
+                file_position = 0
+
+    def stop(self):
+        pass

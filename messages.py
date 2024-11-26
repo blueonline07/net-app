@@ -38,7 +38,7 @@ class HandshakeMessage(Message):
     return f"Hanshake msg - protocol_name: {self.protocol_name}, info_hash: {self.info_hash}, peer_id: {self.peer_id}"
 
   def encode(self):
-    return len(self.protocol_name).to_bytes(1) + self.protocol_name.encode('ascii') + b'\x00' * 8 + self.info_hash + self.peer_id.encode('ascii')
+    return len(self.protocol_name).to_bytes(1, 'big') + self.protocol_name.encode('ascii') + b'\x00' * 8 + self.info_hash + self.peer_id.encode('ascii')
   
 class InterestedMessage(Message):
   def encode(self):
